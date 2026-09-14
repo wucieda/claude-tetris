@@ -88,6 +88,11 @@ body {
   display: flex;
   gap: 8px;
   align-items: center;
+  /* #overlay cubre todo .wrapper con inset:0 y no fija z-index propio, así
+     que sin esto queda pintado encima de estos controles (tapando el
+     selector de skin/el botón de tema) mientras se muestra el nombre,
+     PAUSA o GAME OVER. */
+  z-index: 10;
 }
 
 #theme-toggle {
