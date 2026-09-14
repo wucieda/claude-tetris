@@ -596,3 +596,37 @@ body.skin-pastel {
 body.skin-pixel {
   --grid-line: #333;
 }
+
+/* ---- Récords: badge de nuevo top 5, mejores stats, botón de reseteo ---- */
+#top-badge {
+  font-family: var(--font-display);
+  font-size: clamp(12px, 2vw, 14px);
+  font-weight: 800;
+  color: var(--overlay-score-color);
+}
+
+#best-stats {
+  font-family: var(--font-body);
+  font-size: clamp(12px, 2vw, 14px);
+  font-weight: 600;
+  color: var(--controls-text);
+}
+
+#reset-ranking-btn {
+  background: transparent;
+  color: var(--controls-text);
+  border: 1px solid var(--board-border);
+  border-radius: var(--radius-pill);
+  padding: 8px 20px;
+  font-family: var(--font-body);
+  font-size: clamp(12px, 2vw, 14px);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+#reset-ranking-btn:hover {
+  background: var(--board-bg);
+  border-color: var(--title-color);
+  color: var(--text-color);
+}

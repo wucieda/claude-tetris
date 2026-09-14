@@ -131,7 +131,9 @@ const LINE_SCORES = [0, 100, 300, 500, 800];
 const RANKING_KEY = 'tetris-ranking';
 const LAST_PLAYER_KEY = 'tetris-last-player';
 const START_LEVEL_KEY = 'tetris-start-level';
-const RANKING_MAX = 10;
+const BEST_COMBO_KEY = 'tetris-best-combo';
+const MAX_LINES_KEY = 'tetris-max-lines';
+const RANKING_MAX = 5;
 
 // Piezas especiales: tipos 8-10 y 12 aparecen al azar (nunca el 11, que es una
 // recompensa exclusiva tras un Tetris — ver clearLines/pendingRewardPiece).
@@ -171,6 +173,9 @@ const resumeBtn = document.getElementById('resume-btn');
 const pauseControlsToggle = document.getElementById('pause-controls-toggle');
 const pauseControlsList = document.getElementById('pause-controls-list');
 const startLevelSelect = document.getElementById('start-level-select');
+const topBadgeEl = document.getElementById('top-badge');
+const bestStatsEl = document.getElementById('best-stats');
+const resetRankingBtn = document.getElementById('reset-ranking-btn');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let gridColor, blockHighlight;
@@ -178,6 +183,7 @@ let currentSkin = 'retro';
 let playerName, playerKey, awaitingName;
 let heldType, holdLocked;
 let combo, lastClearWasTetris, pendingRewardPiece, lastActionWasRotate;
+let bestComboThisRun;
 let toastTimer = null;
 let audioCtx = null;
 let startLevel = 1;
@@ -301,6 +307,7 @@ function clearLines(tSpin) {
   const messages = [];
 
   combo++;
+  bestComboThisRun = Math.max(bestComboThisRun, combo);
   if (combo > 1) {
     gained += COMBO_BASE * (combo - 1) * level;
     messages.push(`COMBO x${combo}!`);
@@ -431,6 +438,25 @@ function saveRanking(ranking) {
   }
 }
 
+// Mejor combo y líneas máximas conseguidas, persistidos por separado del
+// ranking (no dependen de una partida ganadora concreta, solo del récord).
+function loadBestStat(key) {
+  try {
+    const n = parseInt(localStorage.getItem(key), 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBestStat(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // localStorage no disponible: no persiste, pero el juego sigue.
+  }
+}
+
 // Guarda la mejor puntuación de `key` (identidad case-insensitive) y devuelve el
 // ranking completo ordenado de mayor a menor.
 function recordScore(key, name, finalScore) {
@@ -481,6 +507,22 @@ function renderRanking(ranking) {
     ol.appendChild(li);
   });
   rankingList.appendChild(ol);
+}
+
+function renderBestStats() {
+  bestStatsEl.textContent = `Mejor combo: ${loadBestStat(BEST_COMBO_KEY)} · Líneas máx: ${loadBestStat(MAX_LINES_KEY)}`;
+}
+
+// Borra ranking, mejor combo y líneas máximas guardadas (pide confirmación:
+// es destructivo e irreversible).
+function resetRanking() {
+  if (!confirm('¿Borrar todos los récords?')) return;
+  saveRanking([]); // el ranking solo se toca vía loadRanking/saveRanking/recordScore
+  saveBestStat(BEST_COMBO_KEY, 0);
+  saveBestStat(MAX_LINES_KEY, 0);
+  renderRanking([]);
+  renderBestStats();
+  topBadgeEl.classList.add('hidden');
 }
 
 // Toast breve ("COMBO x3!", "T-SPIN!", ...) sobre el tablero. Reinicia su propia
@@ -653,14 +695,31 @@ function showOverlay({ title, scoreText, showNameForm, showRanking, showRestart,
   rankingList.classList.toggle('hidden', !showRanking);
   restartBtn.classList.toggle('hidden', !showRestart);
   pauseMenuEl.classList.toggle('hidden', !showPauseMenu);
+  // best-stats/reset-récords van pegados al ranking: si el ranking está oculto
+  // (p.ej. PAUSA), tampoco tiene sentido dejar el botón de borrar récords activo.
+  bestStatsEl.classList.toggle('hidden', !showRanking);
+  resetRankingBtn.classList.toggle('hidden', !showRanking);
+  if (!showRanking) topBadgeEl.classList.add('hidden');
   overlay.classList.remove('hidden');
 }
 
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
+  // Capturado antes de recordScore (que ya deja el máximo histórico en la
+  // entrada) para saber si ESTA partida fue la que puso/mejoró el puntaje,
+  // y no solo que el mejor puntaje histórico del jugador siga en el top.
+  const priorBest = loadRanking().find(entry => entry.key === playerKey);
+  const isNewBest = !priorBest || score > priorBest.score;
   const ranking = recordScore(playerKey, playerName, score);
   renderRanking(ranking);
+  const rank = ranking.findIndex(entry => entry.key === playerKey);
+  topBadgeEl.classList.toggle('hidden', !(isNewBest && rank >= 0 && rank < RANKING_MAX));
+  const priorBestCombo = loadBestStat(BEST_COMBO_KEY);
+  const priorMaxLines = loadBestStat(MAX_LINES_KEY);
+  if (bestComboThisRun > priorBestCombo) saveBestStat(BEST_COMBO_KEY, bestComboThisRun);
+  if (lines > priorMaxLines) saveBestStat(MAX_LINES_KEY, lines);
+  renderBestStats();
   showOverlay({
     title: 'GAME OVER',
     scoreText: `Puntuación: ${score.toLocaleString()}`,
@@ -688,7 +747,9 @@ function togglePause() {
 function promptForName() {
   awaitingName = true;
   nameInput.value = localStorage.getItem(LAST_PLAYER_KEY) || '';
-  showOverlay({ title: 'TETRIS', scoreText: '', showNameForm: true, showRanking: false, showRestart: false });
+  renderRanking(loadRanking());
+  renderBestStats();
+  showOverlay({ title: 'TETRIS', scoreText: '', showNameForm: true, showRanking: true, showRestart: false });
   nameInput.focus();
   nameInput.select();
   // El navegador auto-scrollea para mostrar el input enfocado, y ese
@@ -746,6 +807,7 @@ function init() {
   holdLocked = false;
   holdSection.classList.remove('locked');
   combo = 0;
+  bestComboThisRun = 0;
   lastClearWasTetris = false;
   pendingRewardPiece = false;
   lastActionWasRotate = false;
@@ -815,6 +877,7 @@ skinSelect.addEventListener('change', () => {
   // como efecto secundario no deseado.
   skinSelect.blur();
 });
+resetRankingBtn.addEventListener('click', resetRanking);
 
 applyTheme(localStorage.getItem('theme') === 'light' ? 'light' : 'dark');
 (function initStartLevel() {
