@@ -20,6 +20,97 @@ const COLORS = [
   '#90a4ae', // 3x3 hueca (reto) - gris azulado
 ];
 
+// Paletas alternativas para las skins Neon/Pastel — mismo largo/orden que
+// COLORS (índice 0 sin usar, 1-12 = mismo tipo de pieza). Nunca reordenar ni
+// redimensionar: los valores de celda 1-12 indexan directamente este array.
+const NEON_COLORS = [
+  null,
+  '#00e5ff', // I - cyan
+  '#ffea00', // O - yellow
+  '#e040fb', // T - purple
+  '#69f0ae', // S - green
+  '#ff5252', // Z - red
+  '#536dfe', // J - indigo
+  '#40c4ff', // L - pale blue
+  '#ffab40', // + (plus pentominó) - naranja
+  '#1de9b6', // U (pentominó) - verde azulado
+  '#ff4081', // Y (pentominó) - rosa
+  '#ffff00', // 1x1 (recompensa) - dorado
+  '#b0bec5', // 3x3 hueca (reto) - gris azulado
+];
+
+const PASTEL_COLORS = [
+  null,
+  '#a8e6f0', // I - cyan
+  '#fff2b8', // O - yellow
+  '#e0b8ea', // T - purple
+  '#c2ecc4', // S - green
+  '#f5b8b8', // Z - red
+  '#c0c6f0', // J - indigo
+  '#c8e4fa', // L - pale blue
+  '#ffd9ad', // + (plus pentominó) - naranja
+  '#b0e0da', // U (pentominó) - verde azulado
+  '#f8c0d8', // Y (pentominó) - rosa
+  '#fff8c0', // 1x1 (recompensa) - dorado
+  '#d4dde2', // 3x3 hueca (reto) - gris azulado
+];
+
+// Configuración de cada skin: su paleta de colores y cómo dibuja una celda.
+// `drawBlock` delega en `SKINS[currentSkin]` — ver más abajo.
+const SKINS = {
+  retro: {
+    colors: COLORS,
+    drawCell(context, x, y, color, size) {
+      context.fillStyle = color;
+      context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      context.fillStyle = blockHighlight;
+      context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+    },
+  },
+  neon: {
+    colors: NEON_COLORS,
+    drawCell(context, x, y, color, size) {
+      context.save();
+      context.shadowColor = color;
+      context.shadowBlur = size * 0.6;
+      context.fillStyle = color;
+      context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      context.restore();
+    },
+  },
+  pastel: {
+    colors: PASTEL_COLORS,
+    drawCell(context, x, y, color, size) {
+      context.fillStyle = color;
+      const px = x * size + 1, py = y * size + 1, s = size - 2;
+      const r = Math.min(6, s / 3);
+      if (typeof context.roundRect === 'function') {
+        context.beginPath();
+        context.roundRect(px, py, s, s, r);
+        context.fill();
+      } else {
+        context.fillRect(px, py, s, s);
+      }
+    },
+  },
+  pixel: {
+    colors: COLORS,
+    drawCell(context, x, y, color, size) {
+      context.fillStyle = color;
+      context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      context.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      const sub = size / 4;
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          if ((i + j) % 2 === 0) {
+            context.fillRect(x * size + 1 + i * sub, y * size + 1 + j * sub, sub, sub);
+          }
+        }
+      }
+    },
+  },
+};
+
 const PIECES = [
   null,
   [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
@@ -67,6 +158,7 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggleBtn = document.getElementById('theme-toggle');
+const skinSelect = document.getElementById('skin-select');
 const nameForm = document.getElementById('name-form');
 const nameInput = document.getElementById('player-name-input');
 const rankingList = document.getElementById('ranking-list');
@@ -82,6 +174,7 @@ const startLevelSelect = document.getElementById('start-level-select');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let gridColor, blockHighlight;
+let currentSkin = 'retro';
 let playerName, playerKey, awaitingName;
 let heldType, holdLocked;
 let combo, lastClearWasTetris, pendingRewardPiece, lastActionWasRotate;
@@ -445,13 +538,10 @@ function playComboSound(comboLevel, tSpin, perfectClear) {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const skin = SKINS[currentSkin];
+  const color = skin.colors[colorIndex];
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = blockHighlight;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  skin.drawCell(context, x, y, color, size);
   context.globalAlpha = 1;
 }
 
@@ -531,6 +621,27 @@ function toggleTheme() {
   const theme = document.body.classList.contains('light-theme') ? 'dark' : 'light';
   localStorage.setItem('theme', theme);
   applyTheme(theme);
+}
+
+function applySkin(skin) {
+  document.body.classList.remove('skin-neon', 'skin-pastel', 'skin-pixel');
+  if (skin !== 'retro') document.body.classList.add(`skin-${skin}`);
+  currentSkin = skin;
+  updateThemeColors();
+}
+
+function changeSkin(skin) {
+  try {
+    localStorage.setItem('tetris-skin', skin);
+  } catch {
+    // localStorage no disponible: la preferencia no persiste, pero el juego sigue.
+  }
+  applySkin(skin);
+  // Refleja el cambio de inmediato (tablero + previews NEXT/HOLD) sin esperar
+  // al próximo frame/spawn/hold.
+  if (board) draw();
+  if (next) drawNext();
+  drawHold();
 }
 
 // Estado único del overlay: muestra/oculta cada bloque (form de nombre, ranking,
@@ -696,6 +807,14 @@ startLevelSelect.addEventListener('change', () => {
   startLevel = parseInt(startLevelSelect.value, 10) || 1;
   try { localStorage.setItem(START_LEVEL_KEY, String(startLevel)); } catch {}
 });
+skinSelect.addEventListener('change', () => {
+  changeSkin(skinSelect.value);
+  // Evita que el <select> siga enfocado durante la partida: si no, el
+  // typeahead nativo del navegador puede reaccionar a teclas del juego (p.
+  // ej. "P" de pausa coincide con "Pastel"/"Pixel Art") y cambiar la skin
+  // como efecto secundario no deseado.
+  skinSelect.blur();
+});
 
 applyTheme(localStorage.getItem('theme') === 'light' ? 'light' : 'dark');
 (function initStartLevel() {
@@ -703,4 +822,13 @@ applyTheme(localStorage.getItem('theme') === 'light' ? 'light' : 'dark');
   startLevel = Number.isInteger(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 1;
   startLevelSelect.value = String(startLevel);
 })();
+let savedSkin = null;
+try {
+  savedSkin = localStorage.getItem('tetris-skin');
+} catch {
+  // localStorage no disponible: se usa la skin por defecto.
+}
+const initialSkin = ['retro', 'neon', 'pastel', 'pixel'].includes(savedSkin) ? savedSkin : 'retro';
+applySkin(initialSkin);
+skinSelect.value = initialSkin;
 promptForName();
